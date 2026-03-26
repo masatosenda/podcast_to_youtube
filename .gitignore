@@ -1,0 +1,29 @@
+# 認証情報（絶対にコミットしないこと）
+config/credentials/client_secret.json
+config/credentials/token.json
+
+# 一時ファイル
+*.mp4
+*.mp3
+*.m4a
+*.wav
+*.srt
+tmp/
+temp/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# アートワーク（サイズが大きい場合はコメントアウト）
+# assets/artwork.jpg

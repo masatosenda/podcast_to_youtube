@@ -1,0 +1,23 @@
+rss:
+  feed_url: "https://YOUR_PODCAST_RSS_FEED_URL"
+
+podcast:
+  artwork_path: "assets/artwork.jpg"   # 静止画として使用する画像
+  # 話者ID → 表示名のマッピング
+  # 注意: pyannoteの話者IDはエピソードごとにリセットされます。
+  # SPEAKER_00が毎回同じ人物とは限らないため、エピソード確認後に手動補正が必要な場合があります。
+  speakers:
+    SPEAKER_00: "田中"
+    SPEAKER_01: "佐藤"
+
+youtube:
+  category_id: "22"         # People & Blogs
+  privacy_status: "public"  # public / unlisted / private
+  default_tags:
+    - "ポッドキャスト"
+    - "podcast"
+
+processing:
+  batch_size: 25             # 1Colabセッションあたりの処理本数
+  whisper_model: "large-v3"  # Colab GPU向け。GitHub Actions向けはmedium
+  language: "ja"

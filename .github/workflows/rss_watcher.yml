@@ -1,0 +1,97 @@
+name: RSS Watcher - Podcast to YouTube
+
+on:
+  schedule:
+    # 毎朝9時 JST (= UTC 0:00)
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      guid:
+        description: '特定エピソードのGUID（空欄の場合は最新未処理1本を処理）'
+        required: false
+        default: ''
+
+jobs:
+  check-and-upload:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system dependencies (ffmpeg)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          ffmpeg -version
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check for new episodes
+        id: check_new
+        run: |
+          python scripts/rss_parser.py --check-new
+          echo "has_new=true" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Skip if no new episodes
+        if: steps.check_new.outcome == 'failure'
+        run: |
+          echo "新しいエピソードはありません。処理をスキップします。"
+          exit 0
+
+      - name: Restore YouTube credentials
+        if: steps.check_new.outcome == 'success'
+        run: |
+          mkdir -p config/credentials
+          echo '${{ secrets.YOUTUBE_CLIENT_SECRET }}' > config/credentials/client_secret.json
+          echo '${{ secrets.YOUTUBE_TOKEN }}' > config/credentials/token.json
+
+      - name: Process episode
+        if: steps.check_new.outcome == 'success'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          # GitHub ActionsはCPU環境のため medium モデルを使用
+          # config.yaml の whisper_model を一時的に上書き
+          python -c "
+          import yaml, pathlib
+          config_path = pathlib.Path('config/config.yaml')
+          config = yaml.safe_load(config_path.read_text())
+          config['processing']['whisper_model'] = 'medium'
+          config_path.write_text(yaml.dump(config, allow_unicode=True))
+          print('Whisperモデルをmediumに変更しました')
+          "
+          # エピソード処理
+          GUID="${{ github.event.inputs.guid }}"
+          if [ -n "$GUID" ]; then
+            python main.py --mode=single-episode --guid="$GUID"
+          else
+            python main.py --mode=single-episode
+          fi
+
+      - name: Save updated YouTube token
+        if: steps.check_new.outcome == 'success' && always()
+        run: |
+          # リフレッシュされたトークンをSecretsに反映するには
+          # 手動でGitHub Secrets (YOUTUBE_TOKEN) を更新してください
+          echo "トークンの更新が必要な場合は GitHub Secrets (YOUTUBE_TOKEN) を手動更新してください"
+
+      - name: Commit progress.json
+        if: steps.check_new.outcome == 'success'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add state/progress.json
+          # 差分がある場合のみコミット
+          git diff --cached --quiet || git commit -m "chore: update progress.json [skip ci]"
+          git push
