@@ -47,7 +47,11 @@ def get_youtube_client():
             flow = InstalledAppFlow.from_client_secrets_file(
                 str(CLIENT_SECRET_FILE), SCOPES
             )
-            creds = flow.run_local_server(port=0)
+            # Google Colab環境ではブラウザが使えないため run_console を使用
+            try:
+                creds = flow.run_local_server(port=0)
+            except Exception:
+                creds = flow.run_console()
 
         TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
         TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
