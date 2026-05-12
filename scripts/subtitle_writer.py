@@ -5,7 +5,10 @@ transcriber.pyの戻り値セグメントリストからSRTファイルを生成
 同一話者が連続する場合はセグメントを結合する（最大5秒・最大100文字）。
 """
 
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def _format_timestamp(seconds: float) -> str:
@@ -25,14 +28,7 @@ def _merge_segments(
     max_duration: float = 5.0,
     max_chars: int = 100,
 ) -> list[dict]:
-    """
-    同一話者の連続セグメントを結合する。
-
-    結合条件:
-    - 同じ話者が連続している
-    - 結合後の時間が max_duration 秒以内
-    - 結合後のテキストが max_chars 文字以内
-    """
+    """同一話者の連続セグメントを結合する。"""
     if not segments:
         return []
 
@@ -55,29 +51,39 @@ def _merge_segments(
     return merged
 
 
-def write_srt(segments: list[dict], output_path: str) -> None:
-    """
-    セグメントリストからSRTファイルを生成する。
-
-    Args:
-        segments: [{"start": float, "end": float, "speaker": str, "text": str}, ...]
-        output_path: 出力先SRTファイルパス
-    """
+def write_srt(
+    segments: list[dict],
+    output_path: str,
+    speaker_colors: dict[str, str] | None = None,
+    jingle_skip_seconds: float = 0,
+) -> None:
+    """セグメントリストからSRTファイルを生成する。"""
     merged = _merge_segments(segments)
     lines = []
 
-    for i, seg in enumerate(merged, start=1):
+    idx = 0
+    for seg in merged:
+        if jingle_skip_seconds > 0 and seg["start"] < jingle_skip_seconds:
+            continue
+
+        idx += 1
         start_tc = _format_timestamp(seg["start"])
         end_tc = _format_timestamp(seg["end"])
         speaker = seg["speaker"]
         text = seg["text"].strip()
 
-        lines.append(str(i))
+        lines.append(str(idx))
         lines.append(f"{start_tc} --> {end_tc}")
-        lines.append(f"[{speaker}]: {text}")
-        lines.append("")  # 空行（SRTブロック区切り）
+        if speaker and speaker != "UNKNOWN":
+            color_tag = ""
+            if speaker_colors and speaker in speaker_colors:
+                color_tag = r"{\c&H" + speaker_colors[speaker] + r"&}"
+            lines.append(f"{color_tag}{speaker}：{text}")
+        else:
+            lines.append(text)
+        lines.append("")
 
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text("\n".join(lines), encoding="utf-8")
-    print(f"[subtitle_writer] SRT保存: {output_path} ({len(merged)}ブロック)")
+    logger.info("SRT保存: %s (%dブロック)", output_path, idx)

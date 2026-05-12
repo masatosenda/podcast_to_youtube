@@ -7,20 +7,18 @@ state/progress.json を参照して処理済みエピソードをスキップす
 
 import argparse
 import json
+import logging
 import sys
+import tempfile
 from pathlib import Path
 
 import feedparser
-import yaml
 
-ROOT_DIR = Path(__file__).parent.parent
-STATE_FILE = ROOT_DIR / "state" / "progress.json"
-CONFIG_FILE = ROOT_DIR / "config" / "config.yaml"
+from . import STATE_FILE, load_config
 
+logger = logging.getLogger(__name__)
 
-def load_config() -> dict:
-    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+MAX_RETRIES = 3  # エラーエピソードの最大リトライ回数
 
 
 def load_progress() -> dict:
@@ -31,9 +29,18 @@ def load_progress() -> dict:
 
 
 def save_progress(progress: dict) -> None:
+    """アトミックにprogress.jsonを保存する（書き込み途中のクラッシュでもデータが壊れない）"""
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(progress, f, ensure_ascii=False, indent=2)
+    fd, tmp_path = tempfile.mkstemp(
+        dir=STATE_FILE.parent, suffix=".tmp", prefix="progress_"
+    )
+    try:
+        with open(fd, "w", encoding="utf-8") as f:
+            json.dump(progress, f, ensure_ascii=False, indent=2)
+        Path(tmp_path).replace(STATE_FILE)
+    except Exception:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
 
 
 def parse_feed(feed_url: str) -> list[dict]:
@@ -41,7 +48,6 @@ def parse_feed(feed_url: str) -> list[dict]:
     feed = feedparser.parse(feed_url)
     episodes = []
     for entry in feed.entries:
-        # enclosureタグから音声URLを取得
         audio_url = None
         for enc in getattr(entry, "enclosures", []):
             if enc.get("type", "").startswith("audio/"):
@@ -63,37 +69,56 @@ def parse_feed(feed_url: str) -> list[dict]:
 
 
 def get_pending_episodes(limit: int | None = None) -> list[dict]:
-    """未処理エピソードのリストを返す（古い順）"""
+    """未処理エピソードのリストを返す（古い順）
+
+    - status="done" のエピソードはスキップ
+    - status="error" でリトライ回数が MAX_RETRIES 以上のエピソードもスキップ
+    """
     config = load_config()
     progress = load_progress()
-    done_guids = {
-        guid
-        for guid, info in progress["episodes"].items()
-        if info.get("status") == "done"
-    }
+
+    skip_guids = set()
+    for guid, info in progress["episodes"].items():
+        if info.get("status") == "done":
+            skip_guids.add(guid)
+        elif info.get("status") == "error":
+            if info.get("retry_count", 0) >= MAX_RETRIES:
+                skip_guids.add(guid)
+                logger.warning("リトライ上限到達でスキップ: %s", guid[:12])
 
     all_episodes = parse_feed(config["rss"]["feed_url"])
-    # RSSは新しい順なので逆順にして古い順で処理
     all_episodes.reverse()
 
-    pending = [ep for ep in all_episodes if ep["guid"] not in done_guids]
+    pending = [ep for ep in all_episodes if ep["guid"] not in skip_guids]
     if limit:
         pending = pending[:limit]
     return pending
 
 
 def mark_episode(guid: str, status: str, **kwargs) -> None:
-    """エピソードのステータスを更新して即時保存する"""
+    """エピソードのステータスを更新して即時保存する
+
+    - status="done" の場合、過去のerror_msg/retry_countをクリーンアップ
+    - status="error" の場合、retry_countをインクリメント
+    """
     progress = load_progress()
-    progress["episodes"].setdefault(guid, {})
-    progress["episodes"][guid]["status"] = status
+    ep = progress["episodes"].setdefault(guid, {})
+    ep["status"] = status
+
+    if status == "done":
+        ep.pop("error_msg", None)
+        ep.pop("retry_count", None)
+    elif status == "error":
+        ep["retry_count"] = ep.get("retry_count", 0) + 1
+
     for k, v in kwargs.items():
-        progress["episodes"][guid][k] = v
+        ep[k] = v
+
     save_progress(progress)
 
 
 def check_new_episodes() -> int:
-    """新エピソード数を返す（GitHub Actions用）"""
+    """新エピソード数を返す"""
     config = load_config()
     progress = load_progress()
     done_guids = {
@@ -102,8 +127,7 @@ def check_new_episodes() -> int:
         if info.get("status") == "done"
     }
     all_episodes = parse_feed(config["rss"]["feed_url"])
-    new_count = sum(1 for ep in all_episodes if ep["guid"] not in done_guids)
-    return new_count
+    return sum(1 for ep in all_episodes if ep["guid"] not in done_guids)
 
 
 def main():

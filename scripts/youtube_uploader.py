@@ -6,9 +6,7 @@ OAuth2認証トークンは credentials/token.json にキャッシュする。
 デフォルト上限10,000units/日 → 1日最大6本
 """
 
-import json
-import os
-from pathlib import Path
+import logging
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -17,8 +15,10 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
-ROOT_DIR = Path(__file__).parent.parent
-CREDENTIALS_DIR = ROOT_DIR / "config" / "credentials"
+from . import CREDENTIALS_DIR
+
+logger = logging.getLogger(__name__)
+
 CLIENT_SECRET_FILE = CREDENTIALS_DIR / "client_secret.json"
 TOKEN_FILE = CREDENTIALS_DIR / "token.json"
 
@@ -27,9 +27,16 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube.force-ssl",
 ]
 
+# バッチ処理中にクライアントを使い回すためのキャッシュ
+_youtube_client = None
+
 
 def get_youtube_client():
-    """OAuth2認証済みYouTubeクライアントを返す"""
+    """OAuth2認証済みYouTubeクライアントを返す（バッチ内で再利用）"""
+    global _youtube_client
+    if _youtube_client is not None:
+        return _youtube_client
+
     creds = None
 
     if TOKEN_FILE.exists():
@@ -47,18 +54,13 @@ def get_youtube_client():
             flow = InstalledAppFlow.from_client_secrets_file(
                 str(CLIENT_SECRET_FILE), SCOPES
             )
-            # Google Colab環境ではブラウザが使えないため run_console を使用
-            creds = flow.run_console()
+            creds = flow.run_local_server(port=0)
 
         TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
         TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
 
-    return build("youtube", "v3", credentials=creds)
-
-
-def _build_description(original_description: str) -> str:
-    prefix = "🎙 ポッドキャスト音声です。\n\n"
-    return prefix + original_description
+    _youtube_client = build("youtube", "v3", credentials=creds)
+    return _youtube_client
 
 
 def upload_video(
@@ -69,21 +71,13 @@ def upload_video(
     privacy_status: str = "public",
     tags: list[str] | None = None,
 ) -> str:
-    """
-    MP4動画をYouTubeにアップロードする。
-
-    Returns:
-        YouTubeビデオID
-
-    Raises:
-        HttpError: クォータ超過(403)など
-    """
+    """MP4動画をYouTubeにアップロードする。"""
     youtube = get_youtube_client()
 
     body = {
         "snippet": {
             "title": title,
-            "description": _build_description(description),
+            "description": description,
             "categoryId": category_id,
             "tags": tags or [],
         },
@@ -95,11 +89,11 @@ def upload_video(
     media = MediaFileUpload(
         video_path,
         mimetype="video/mp4",
-        chunksize=1024 * 1024,  # 1MB チャンク（Resumable Upload）
+        chunksize=1024 * 1024,
         resumable=True,
     )
 
-    print(f"[youtube_uploader] アップロード開始: {title}")
+    logger.info("アップロード開始: %s", title)
     request = youtube.videos().insert(
         part="snippet,status",
         body=body,
@@ -111,25 +105,21 @@ def upload_video(
         status, response = request.next_chunk()
         if status:
             progress = int(status.progress() * 100)
-            print(f"[youtube_uploader] アップロード進捗: {progress}%")
+            if progress % 25 == 0:  # 25%ごとにログ出力（冗長さを削減）
+                logger.info("アップロード進捗: %d%%", progress)
 
     video_id = response["id"]
-    print(f"[youtube_uploader] アップロード完了: https://youtu.be/{video_id}")
+    logger.info("アップロード完了: https://youtu.be/%s", video_id)
     return video_id
 
 
 def attach_subtitle(video_id: str, srt_path: str, language: str = "ja") -> None:
-    """
-    字幕SRTファイルをYouTubeビデオに添付する。
-
-    Raises:
-        HttpError: クォータ超過(403)など
-    """
+    """字幕SRTファイルをYouTubeビデオに添付する。"""
     youtube = get_youtube_client()
 
     media = MediaFileUpload(srt_path, mimetype="application/octet-stream", resumable=False)
 
-    print(f"[youtube_uploader] 字幕添付開始: video_id={video_id}")
+    logger.info("字幕添付: video_id=%s", video_id)
     youtube.captions().insert(
         part="snippet",
         body={
@@ -142,7 +132,25 @@ def attach_subtitle(video_id: str, srt_path: str, language: str = "ja") -> None:
         },
         media_body=media,
     ).execute()
-    print(f"[youtube_uploader] 字幕添付完了")
+    logger.info("字幕添付完了")
+
+
+def add_to_playlist(video_id: str, playlist_id: str) -> None:
+    """動画をプレイリストに追加する。"""
+    youtube = get_youtube_client()
+    youtube.playlistItems().insert(
+        part="snippet",
+        body={
+            "snippet": {
+                "playlistId": playlist_id,
+                "resourceId": {
+                    "kind": "youtube#video",
+                    "videoId": video_id,
+                },
+            }
+        },
+    ).execute()
+    logger.info("プレイリスト追加: %s → %s", video_id, playlist_id)
 
 
 def upload_episode(
@@ -152,13 +160,7 @@ def upload_episode(
     description: str,
     config: dict,
 ) -> str:
-    """
-    動画アップロード＋字幕添付をまとめて実行する。
-    HttpError 403（クォータ超過）の場合はそのまま再raiseする。
-
-    Returns:
-        YouTubeビデオID
-    """
+    """動画アップロード＋字幕添付をまとめて実行する。"""
     youtube_config = config.get("youtube", {})
     try:
         video_id = upload_video(
@@ -173,5 +175,5 @@ def upload_episode(
         return video_id
     except HttpError as e:
         if e.resp.status == 403:
-            print(f"[youtube_uploader] クォータ超過(403)を検知。処理を中断します。")
+            logger.error("クォータ超過(403)を検知。処理を中断します。")
         raise

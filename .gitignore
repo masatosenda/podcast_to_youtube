@@ -2,7 +2,14 @@
 config/credentials/client_secret.json
 config/credentials/token.json
 
-# 一時ファイル
+# 設定ファイル（個人情報を含むため）
+config/config.yaml
+
+# 処理状態・ログ
+state/progress.json
+logs/
+
+# メディアファイル
 *.mp4
 *.mp3
 *.m4a
@@ -25,5 +32,6 @@ venv/
 # macOS
 .DS_Store
 
-# アートワーク（サイズが大きい場合はコメントアウト）
-# assets/artwork.jpg
+# IDE
+.vscode/
+.idea/

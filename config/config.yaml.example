@@ -1,0 +1,53 @@
+rss:
+  feed_url: "https://anchor.fm/s/XXXXXXXX/podcast/rss"  # あなたのポッドキャストのRSSフィードURL
+
+podcast:
+  artwork_path: "assets/artwork.jpg"   # YouTube動画の背景に使う静止画
+  # 話者名を声の低い順に指定（ピッチ自動判定）
+  # ZCR（ゼロ交差率）で声の高さを推定し、自動でマッピングする
+  # pyannoteのSPEAKER_IDは毎回変わるため、固定マッピングより推奨
+  speakers_by_pitch:
+    - "ホストA"    # 低い声
+    - "ホストB"    # 高い声
+  # または固定マッピング（speakers_by_pitch が未設定の場合に使用）
+  # speakers:
+  #   SPEAKER_00: "ホストA"
+  #   SPEAKER_01: "ホストB"
+  # 冒頭ジングルの字幕をスキップする秒数（0で無効）
+  jingle_skip_seconds: 0
+  # 話者ごとの字幕カラー（ASS形式 BBGGRR）
+  # 省略した話者はデフォルト白で表示されます
+  speaker_colors:
+    "ホストA": "FFFFFF"      # 白
+    "ホストB": "00FFFF"      # 黄色
+  # Whisperの誤変換を修正する置換ルール
+  # 実際の字幕を見ながら随時追加してください
+  text_replacements:
+    # 例: "誤変換": "正しい表記"
+    # "金田": "かねだ"
+
+youtube:
+  category_id: "22"            # People & Blogs
+  privacy_status: "private"    # まずprivateでテスト → 確認後publicに変更
+  playlist_id: ""              # プレイリストID（空ならスキップ。scripts/create_playlist.pyで作成可能）
+  default_tags:
+    - "ポッドキャスト"
+    - "podcast"
+  # YouTube説明文テンプレート
+  # {date_line} → "Spotify 配信日: YYYY/M/D"
+  # {original_description} → RSSの説明文
+  description_template: |
+    🎙 あなたの番組名｜{date_line}
+
+    {original_description}
+
+    ▼ Podcastで聴く
+    Spotify: https://open.spotify.com/show/XXXXX
+    Apple Podcasts: https://podcasts.apple.com/jp/podcast/idXXXXX
+
+    #ポッドキャスト
+
+processing:
+  batch_size: 6              # 1回のバッチで処理する本数（YouTube APIクォータ上限: 6本/日）
+  whisper_model: "large-v3"  # GPU環境向け。CPUのみの場合は "medium" を推奨
+  language: "ja"             # 文字起こし言語

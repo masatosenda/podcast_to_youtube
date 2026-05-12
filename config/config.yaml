@@ -3,21 +3,80 @@ rss:
 
 podcast:
   artwork_path: "assets/artwork.jpg"   # 静止画として使用する画像
-  # 話者ID → 表示名のマッピング
-  # 注意: pyannoteの話者IDはエピソードごとにリセットされます。
-  # SPEAKER_00が毎回同じ人物とは限らないため、エピソード確認後に手動補正が必要な場合があります。
-  speakers:
-    SPEAKER_00: "せんだ"
-    SPEAKER_01: "かねとも"
+  # 話者名を声の低い順に指定（ピッチ自動判定）
+  # ZCR（ゼロ交差率）で声の高さを推定し、自動でマッピングする
+  speakers_by_pitch:
+    - "せんだ"      # 男性（低い声）
+    - "かねとも"    # 女性（高い声）
+  # 話者ごとの字幕カラー（ASS形式 &HBBGGRR）
+  jingle_skip_seconds: 4     # 冒頭ジングル（約4秒）の字幕をスキップ
+  speaker_colors:
+    "せんだ": "FFFFFF"      # 白
+    "かねとも": "00FFFF"    # 黄色
+  # Whisperが出力しがちな誤表記 → 正しい表記への置換ルール
+  # 実際の字幕を見て誤表記を発見したら随時追加する
+  text_replacements:
+    # パーソナリティ名
+    "金朋": "かねとも"
+    "金友": "かねとも"
+    "千田": "せんだ"
+    "仙田": "せんだ"
+    "カネトモ": "かねとも"
+    "センダ": "せんだ"
+    # よく話題に出るポッドキャスト名
+    "デコポンFM": "でこぽんFM"
+    "デコポンエフエム": "でこぽんFM"
+    "でこぽんエフエム": "でこぽんFM"
+    "どんぐりFM": "ドングリFM"
+    "どんぐりエフエム": "ドングリFM"
+    "ドングリエフエム": "ドングリFM"
+    "オジギン": "おじぎん"
+    "お辞儀ん": "おじぎん"
+    "状況ボーイズ": "上京ボーイズ"
+    "情況ボーイズ": "上京ボーイズ"
+    "じょうきょうボーイズ": "上京ボーイズ"
+    # 番組名の誤認識
+    "給糖質": "給湯室"
+    "給当室": "給湯室"
+    "給湯質": "給湯室"
+    "休憩給湯室": "いきぬき給湯室"
+    "息抜き給湯室": "いきぬき給湯室"
+    "生き抜き給湯室": "いきぬき給湯室"
+    "イキヌキ給湯室": "いきぬき給湯室"
 
 youtube:
   category_id: "22"         # People & Blogs
-  privacy_status: "private"  # テスト中はprivate。確認後 public に変更する
+  privacy_status: "public"  # 自動で公開
+  playlist_id: "PLDU_mnFVfkuFsXoQJDhUClEjEqzNLEn_P"
   default_tags:
+    - "いきぬき給湯室"
     - "ポッドキャスト"
-    - "podcast"
+  # YouTube説明文テンプレート
+  # {date_line} → "Spotify 配信日: YYYY/M/D"
+  # {original_description} → RSSの説明文
+  description_template: |
+    🎙 いきぬき給湯室｜{date_line}
+
+    {original_description}
+
+    ▼ Podcastで聴く
+    Spotify: https://open.spotify.com/show/5WGz9JmqaoJ7MKl7GnTOl0
+    Apple Podcasts: https://podcasts.apple.com/jp/podcast/id1613107753
+
+    ▼ 番組について
+    職種もちがうし年齢も12歳はなれている同僚、かねとも＆せんだ。
+    会社の給湯室で雑談するように、そのとき気になったことなどを話します。
+
+    ▼ リンク
+    おすすめエピソード集: https://note.com/sendamasato/n/n6313326701aa
+    お便り・トークテーマ募集: https://forms.gle/5ncDcYhSxmz9wGHy9
+    公式X: https://x.com/ikinuki91042
+    公式グッズ: https://suzuri.jp/ikinuki91042
+    文字起こし: https://listen.style/p/ikinuki?pew9IDyw
+
+    #ポッドキャスト #いきぬき給湯室 #雑談
 
 processing:
-  batch_size: 1              # テスト：1本だけ処理。本番運用時は25に戻す
+  batch_size: 6              # 1日のYouTubeクォータ上限（6本/日）
   whisper_model: "large-v3"  # Colab GPU向け。GitHub Actions向けはmedium
   language: "ja"

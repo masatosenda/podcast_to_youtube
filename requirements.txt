@@ -1,13 +1,13 @@
+# openai-whisper が numpy 2.x で動作しない既知の問題への対策
+# ref: https://github.com/openai/whisper/issues/2097
+numpy>=1.22,<2.0
 feedparser>=6.0
 openai-whisper>=20231117
 pyannote.audio>=3.1
 torch>=2.0
 torchaudio>=2.0
-ffmpeg-python>=0.2
 google-api-python-client>=2.0
 google-auth-oauthlib>=1.0
 google-auth-httplib2>=0.1
 pyyaml>=6.0
 requests>=2.28
-tqdm>=4.65
-pandas>=2.0

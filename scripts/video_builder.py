@@ -6,27 +6,39 @@ ffmpegで静止画＋音声からMP4を生成する
 音声コーデック: AAC 192kbps
 """
 
+import logging
+import shutil
 import subprocess
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+# libass対応のffmpegを検索（macOS ARM → Intel → Linux の順でフォールバック）
+_FFMPEG_CANDIDATES = [
+    "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg",  # macOS ARM (Homebrew)
+    "/usr/local/opt/ffmpeg-full/bin/ffmpeg",      # macOS Intel (Homebrew)
+]
+
+
+def _find_ffmpeg() -> str:
+    """利用可能なffmpegパスを返す"""
+    for candidate in _FFMPEG_CANDIDATES:
+        if Path(candidate).exists():
+            return candidate
+    # フォールバック: PATHから検索
+    return shutil.which("ffmpeg") or "ffmpeg"
+
+
+FFMPEG = _find_ffmpeg()
 
 
 def build_video(
     artwork_path: str,
     audio_path: str,
     output_path: str,
+    srt_path: str | None = None,
 ) -> None:
-    """
-    静止画と音声からMP4ファイルを生成する。
-
-    Args:
-        artwork_path: アートワーク画像パス（JPG/PNG）
-        audio_path: 音声ファイルパス（mp3/m4a/wav）
-        output_path: 出力MP4ファイルパス
-
-    Raises:
-        subprocess.CalledProcessError: ffmpegが失敗した場合
-        FileNotFoundError: 入力ファイルが存在しない場合
-    """
+    """静止画と音声からMP4ファイルを生成する。"""
     artwork = Path(artwork_path)
     audio = Path(audio_path)
     output = Path(output_path)
@@ -38,15 +50,26 @@ def build_video(
 
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    # 1920x1080にアスペクト比を保持してフィット＋パディング
-    vf = (
-        "scale=1920:1080:force_original_aspect_ratio=decrease,"
-        "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black"
-    )
+    vf_parts = [
+        "scale=1920:1080:force_original_aspect_ratio=decrease",
+        "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black",
+    ]
+
+    if srt_path and Path(srt_path).exists():
+        escaped_srt = str(srt_path).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
+        subtitle_style = (
+            "FontSize=22,FontName=Hiragino Sans,"
+            "PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,"
+            "Outline=2,Shadow=0,MarginV=40"
+        )
+        vf_parts.append(f"subtitles='{escaped_srt}':force_style='{subtitle_style}'")
+        logger.info("字幕焼き込み: %s", srt_path)
+
+    vf = ",".join(vf_parts)
 
     cmd = [
-        "ffmpeg",
-        "-y",                    # 既存ファイルを上書き
+        FFMPEG,
+        "-y",
         "-loop", "1",
         "-i", str(artwork),
         "-i", str(audio),
@@ -60,14 +83,16 @@ def build_video(
         str(output),
     ]
 
-    print(f"[video_builder] MP4生成開始: {output_path}")
+    logger.info("MP4生成開始: %s (ffmpeg: %s)", output_path, FFMPEG)
     result = subprocess.run(cmd, capture_output=True, text=True)
 
     if result.returncode != 0:
+        logger.error("ffmpeg stderr:\n%s", result.stderr[-2000:])
         raise subprocess.CalledProcessError(
             result.returncode, cmd,
             output=result.stdout,
             stderr=result.stderr,
         )
 
-    print(f"[video_builder] MP4生成完了: {output_path} ({output.stat().st_size / 1024 / 1024:.1f} MB)")
+    size_mb = output.stat().st_size / 1024 / 1024
+    logger.info("MP4生成完了: %s (%.1f MB)", output_path, size_mb)
