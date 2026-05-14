@@ -12,6 +12,8 @@
 - RSSフィードから未処理エピソードを自動検出
 - Whisper large-v3 による高精度な日本語文字起こし
 - pyannote による話者分離（「Aさん：〜」「Bさん：〜」の字幕）
+- **声紋マッチングによる話者自動識別**（同性ペアでも正確に区別）
+- ゲスト回対応（未知話者を自動で「ゲスト」ラベル付け）
 - 話者ごとの字幕カラー設定
 - 冒頭ジングルの字幕スキップ
 - Whisper誤変換の自動修正（設定ファイルで管理）
@@ -41,7 +43,7 @@ RSSフィード → 音声ダウンロード → Whisper文字起こし → 話�
 ### 1. リポジトリをクローン
 
 ```bash
-git clone https://github.com/yourusername/podcast-to-youtube.git
+git clone https://github.com/masatosenda/podcast_to_youtube.git
 cd podcast-to-youtube
 ```
 
@@ -104,7 +106,6 @@ nano config/config.yaml
 
 最低限変更が必要な項目:
 - `rss.feed_url` — あなたのポッドキャストのRSSフィードURL
-- `podcast.speakers` — 話者の表示名
 - `youtube.description_template` — 説明文テンプレート
 
 詳細は `config/config.yaml.example` を参照してください。
@@ -113,6 +114,20 @@ nano config/config.yaml
 
 YouTube動画の背景に使う画像を `assets/artwork.jpg` に配置してください。
 推奨サイズ: 1920x1080 以上（アスペクト比は自動調整されます）。
+
+### 8. 話者の声紋登録
+
+各話者が1人で10〜30秒話している音声ファイルを `assets/speakers/` に配置します。
+**ファイル名がそのまま字幕の話者名になります。**
+
+```
+assets/speakers/
+  ホストA.wav    （または .m4a / .mp3）
+  ホストB.wav
+```
+
+初回実行時に自動で声紋を抽出・キャッシュします。
+声紋ファイルがない場合はピッチ判定（男女ペア向け）にフォールバックします。
 
 ## 使い方
 
@@ -130,6 +145,9 @@ python main.py --mode=batch --limit=3
 
 # 特定エピソードを処理
 python main.py --mode=single-episode --guid=<GUID>
+
+# ゲスト回（未知話者に名前を付ける）
+python main.py --mode=batch --guest="田中さん"
 ```
 
 ### プレイリストの作成（任意）
@@ -161,6 +179,7 @@ podcast-to-youtube/
 ├── scripts/
 │   ├── rss_parser.py              # RSSフィード解析＋進捗管理
 │   ├── transcriber.py             # Whisper + pyannote 話者分離
+│   ├── speaker_profiles.py        # 声紋マッチング（話者自動識別）
 │   ├── subtitle_writer.py         # SRT字幕生成（話者カラー対応）
 │   ├── video_builder.py           # ffmpeg MP4生成
 │   ├── youtube_uploader.py        # YouTube API アップロード
@@ -169,11 +188,13 @@ podcast-to-youtube/
 │   └── daily_batch.sh             # 自動実行用シェルスクリプト
 ├── config/
 │   ├── config.yaml.example        # 設定テンプレート
+│   ├── voiceprints/               # 声紋キャッシュ（自動生成）
 │   └── credentials/               # OAuth認証情報（.gitignore済）
 ├── state/
 │   └── progress.json              # 処理状態（自動生成）
 ├── assets/
-│   └── artwork.jpg                # 動画背景画像
+│   ├── artwork.jpg                # 動画背景画像
+│   └── speakers/                  # 話者ごとの音声サンプル
 └── logs/                          # バッチ実行ログ（自動生成）
 ```
 
