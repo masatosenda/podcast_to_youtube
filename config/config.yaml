@@ -3,8 +3,11 @@ rss:
 
 podcast:
   artwork_path: "assets/artwork.jpg"   # 静止画として使用する画像
-  # 話者名を声の低い順に指定（ピッチ自動判定）
-  # ZCR（ゼロ交差率）で声の高さを推定し、自動でマッピングする
+  # 声紋ベース話者識別（推奨: 同性ペアでも正確に識別）
+  speaker_voices_dir: "assets/speakers"      # 話者ごとの音声サンプル（WAV, 10-30秒）
+  voiceprints_dir: "config/voiceprints"      # 声紋キャッシュ（自動生成）
+  unknown_speaker_label: "ゲスト"            # 未知話者のラベル
+  # フォールバック: 声紋がない場合のピッチ自動判定（男女ペア向け）
   speakers_by_pitch:
     - "せんだ"      # 男性（低い声）
     - "かねとも"    # 女性（高い声）

@@ -3,16 +3,27 @@ rss:
 
 podcast:
   artwork_path: "assets/artwork.jpg"   # YouTube動画の背景に使う静止画
-  # 話者名を声の低い順に指定（ピッチ自動判定）
-  # ZCR（ゼロ交差率）で声の高さを推定し、自動でマッピングする
-  # pyannoteのSPEAKER_IDは毎回変わるため、固定マッピングより推奨
-  speakers_by_pitch:
-    - "ホストA"    # 低い声
-    - "ホストB"    # 高い声
-  # または固定マッピング（speakers_by_pitch が未設定の場合に使用）
+
+  # === 話者識別（優先順位: 声紋 > ピッチ > 固定マッピング） ===
+
+  # 推奨: 声紋ベース（同性ペアでも正確に識別）
+  # assets/speakers/ に各話者の音声サンプル（10-30秒のWAV）を配置
+  # ファイル名が話者名になる（例: ホストA.wav → 「ホストA」）
+  speaker_voices_dir: "assets/speakers"
+  voiceprints_dir: "config/voiceprints"  # 自動生成キャッシュ
+  unknown_speaker_label: "ゲスト"        # 声紋にマッチしない話者のラベル
+
+  # フォールバック: ピッチ自動判定（男女ペア限定）
+  # 声紋ファイルがない場合にZCR（ゼロ交差率）で判定
+  # speakers_by_pitch:
+  #   - "ホストA"    # 低い声
+  #   - "ホストB"    # 高い声
+
+  # フォールバック: 固定マッピング（speakers_by_pitch も未設定の場合）
   # speakers:
   #   SPEAKER_00: "ホストA"
   #   SPEAKER_01: "ホストB"
+
   # 冒頭ジングルの字幕をスキップする秒数（0で無効）
   jingle_skip_seconds: 0
   # 話者ごとの字幕カラー（ASS形式 BBGGRR）

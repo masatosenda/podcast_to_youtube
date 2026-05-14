@@ -4,8 +4,10 @@ Whisper文字起こし＋pyannote話者分離
 音声ファイルからWhisperで文字起こし、pyannoteで話者分離し、
 結合セグメントリストを返す。
 
-speakers_by_pitch が設定されている場合、ZCR（ゼロ交差率）で
-声の高さを推定し話者名を自動マッピングする。
+話者識別の優先順位:
+  1. 声紋マッチング（speaker_voices_dir 設定時）
+  2. ピッチ自動判定（speakers_by_pitch 設定時、男女ペア向け）
+  3. 固定マッピング（speakers 設定時）
 """
 
 import logging
@@ -204,10 +206,14 @@ def transcribe_and_diarize(
     hf_token: str | None = None,
     speaker_map: dict | None = None,
     speakers_by_pitch: list[str] | None = None,
+    voiceprints: dict | None = None,
+    unknown_speaker_label: str = "ゲスト",
     text_replacements: dict | None = None,
 ) -> list[dict]:
     """
     音声ファイルを文字起こし＋話者分離してセグメントリストを返す。
+
+    話者識別の優先順位: voiceprints > speakers_by_pitch > speaker_map
 
     Returns:
         [{"start": float, "end": float, "speaker": str, "text": str}, ...]
@@ -251,8 +257,18 @@ def transcribe_and_diarize(
         })
     logger.info("pyannoteセグメント数: %d", len(diarization_segments))
 
-    # --- ピッチベース話者自動判定 ---
-    if speakers_by_pitch and diarization_segments:
+    # --- 話者識別（優先順位: 声紋 > ピッチ > 固定マッピング）---
+    if voiceprints and diarization_segments:
+        from .speaker_profiles import match_speakers
+        speaker_map = match_speakers(
+            audio_path=diarize_input,
+            diarization_segments=diarization_segments,
+            voiceprints=voiceprints,
+            unknown_label=unknown_speaker_label,
+            hf_token=hf_token,
+            device=device,
+        )
+    elif speakers_by_pitch and diarization_segments:
         speaker_map = _assign_speakers_by_pitch(
             diarize_input, diarization_segments, speakers_by_pitch,
         )
@@ -306,14 +322,33 @@ def transcribe_and_diarize(
     return combined
 
 
-def transcribe_from_config(audio_path: str) -> list[dict]:
-    """config.yaml の設定を使って文字起こし＋話者分離を実行する"""
+def transcribe_from_config(audio_path: str, guest_label: str | None = None) -> list[dict]:
+    """config.yaml の設定を使って文字起こし＋話者分離を実行する。
+
+    Args:
+        audio_path: 音声ファイルパス
+        guest_label: ゲスト回の場合のゲスト名（Noneなら config の unknown_speaker_label を使用）
+    """
     config = load_config()
     processing = config.get("processing", {})
     podcast = config.get("podcast", {})
-    speakers_by_pitch = podcast.get("speakers_by_pitch")
-    speaker_map = podcast.get("speakers", {}) if not speakers_by_pitch else None
     text_replacements = podcast.get("text_replacements", {})
+
+    # --- 声紋プロファイルの読み込み ---
+    voiceprints = None
+    voices_dir = podcast.get("speaker_voices_dir")
+    if voices_dir:
+        from .speaker_profiles import load_voiceprints
+        hf_token = os.environ.get("HF_TOKEN", "")
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        voiceprints_dir = podcast.get("voiceprints_dir", "config/voiceprints")
+        voiceprints = load_voiceprints(voices_dir, voiceprints_dir, hf_token, device)
+
+    unknown_label = guest_label or podcast.get("unknown_speaker_label", "ゲスト")
+
+    # フォールバック: 声紋がなければピッチ or 固定マッピング
+    speakers_by_pitch = podcast.get("speakers_by_pitch") if not voiceprints else None
+    speaker_map = podcast.get("speakers", {}) if not voiceprints and not speakers_by_pitch else None
 
     return transcribe_and_diarize(
         audio_path=audio_path,
@@ -321,5 +356,7 @@ def transcribe_from_config(audio_path: str) -> list[dict]:
         language=processing.get("language", "ja"),
         speaker_map=speaker_map,
         speakers_by_pitch=speakers_by_pitch,
+        voiceprints=voiceprints,
+        unknown_speaker_label=unknown_label,
         text_replacements=text_replacements,
     )

@@ -18,6 +18,12 @@ logs/
 tmp/
 temp/
 
+# 話者の声紋サンプルは例外（gitで管理する）
+!assets/speakers/*.wav
+
+# 声紋キャッシュ（自動生成）
+config/voiceprints/
+
 # Python
 __pycache__/
 *.py[cod]

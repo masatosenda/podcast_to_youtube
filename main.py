@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT_DIR))
 
 from scripts import load_config, setup_logging
 from scripts.rss_parser import get_pending_episodes, load_progress, mark_episode, parse_feed
-from scripts.transcriber import transcribe_and_diarize
+from scripts.transcriber import transcribe_from_config
 from scripts.subtitle_writer import write_srt
 from scripts.video_builder import build_video
 from scripts.youtube_uploader import upload_episode, add_to_playlist
@@ -104,7 +104,7 @@ def _is_already_uploaded(guid: str) -> str | None:
     return None
 
 
-def process_episode(episode: dict, config: dict) -> str:
+def process_episode(episode: dict, config: dict, guest_label: str | None = None) -> str:
     """1エピソードを処理してYouTubeにアップロードする。"""
     guid = episode["guid"]
     title = format_title(episode["title"], episode.get("published_date", ""))
@@ -119,10 +119,7 @@ def process_episode(episode: dict, config: dict) -> str:
         logger.warning("既にアップロード済み (youtube_id=%s)。スキップします。", existing_id)
         return existing_id
 
-    processing = config.get("processing", {})
     artwork_path = str(ROOT_DIR / config["podcast"]["artwork_path"])
-    speaker_map = config.get("podcast", {}).get("speakers", {})
-    text_replacements = config.get("podcast", {}).get("text_replacements", {})
     speaker_colors = config.get("podcast", {}).get("speaker_colors", {})
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -134,14 +131,8 @@ def process_episode(episode: dict, config: dict) -> str:
         # 1. 音声ダウンロード
         download_audio(audio_url, audio_path)
 
-        # 2. 文字起こし＋話者分離
-        segments = transcribe_and_diarize(
-            audio_path=audio_path,
-            whisper_model=processing.get("whisper_model", "large-v3"),
-            language=processing.get("language", "ja"),
-            speaker_map=speaker_map,
-            text_replacements=text_replacements,
-        )
+        # 2. 文字起こし＋話者分離（config.yamlの設定を使用）
+        segments = transcribe_from_config(audio_path, guest_label=guest_label)
 
         # 3. SRT生成
         jingle_skip = config.get("podcast", {}).get("jingle_skip_seconds", 0)
@@ -170,7 +161,7 @@ def process_episode(episode: dict, config: dict) -> str:
     return video_id
 
 
-def run_batch(limit: int | None = None) -> None:
+def run_batch(limit: int | None = None, guest_label: str | None = None) -> None:
     """バッチ処理: limit本（Noneの場合はbatch_size）を処理する"""
     config = load_config()
     batch_size = limit or config.get("processing", {}).get("batch_size", 25)
@@ -181,13 +172,15 @@ def run_batch(limit: int | None = None) -> None:
         return
 
     logger.info("%d本を処理します...", len(episodes))
+    if guest_label:
+        logger.info("ゲスト話者: %s", guest_label)
 
     for i, episode in enumerate(episodes, start=1):
         guid = episode["guid"]
         logger.info("[%d/%d] %s", i, len(episodes), episode["title"])
         mark_episode(guid, "pending")
         try:
-            video_id = process_episode(episode, config)
+            video_id = process_episode(episode, config, guest_label=guest_label)
             mark_episode(guid, "done", youtube_id=video_id)
             logger.info("完了: %s → https://youtu.be/%s", episode["title"], video_id)
         except HttpError as e:
@@ -202,7 +195,7 @@ def run_batch(limit: int | None = None) -> None:
             logger.error("エラー: %s", e)
 
 
-def run_single(guid: str | None = None) -> None:
+def run_single(guid: str | None = None, guest_label: str | None = None) -> None:
     """単体処理: 最新未処理1本（またはGUID指定）を処理する"""
     config = load_config()
 
@@ -222,9 +215,11 @@ def run_single(guid: str | None = None) -> None:
     episode = episodes[0]
     guid = episode["guid"]
     logger.info("処理開始: %s", episode["title"])
+    if guest_label:
+        logger.info("ゲスト話者: %s", guest_label)
     mark_episode(guid, "pending")
     try:
-        video_id = process_episode(episode, config)
+        video_id = process_episode(episode, config, guest_label=guest_label)
         mark_episode(guid, "done", youtube_id=video_id)
         logger.info("完了: %s → https://youtu.be/%s", episode["title"], video_id)
     except HttpError as e:
@@ -249,14 +244,19 @@ def main():
     )
     parser.add_argument("--guid", default=None)
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument(
+        "--guest",
+        default=None,
+        help="ゲスト回の場合、ゲストの名前を指定（例: --guest 田中さん）",
+    )
     args = parser.parse_args()
 
     setup_logging()
 
     if args.mode == "batch":
-        run_batch(limit=args.limit)
+        run_batch(limit=args.limit, guest_label=args.guest)
     elif args.mode == "single-episode":
-        run_single(guid=args.guid)
+        run_single(guid=args.guid, guest_label=args.guest)
 
 
 if __name__ == "__main__":
