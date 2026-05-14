@@ -87,14 +87,17 @@ def load_voiceprints(
     if not voices_path.exists():
         return {}
 
-    wav_files = sorted(voices_path.glob("*.wav"))
-    if not wav_files:
+    audio_exts = ("*.wav", "*.m4a", "*.mp3", "*.ogg", "*.flac")
+    audio_files = sorted(
+        f for ext in audio_exts for f in voices_path.glob(ext)
+    )
+    if not audio_files:
         return {}
 
     vp_path.mkdir(parents=True, exist_ok=True)
 
     voiceprints: dict[str, np.ndarray] = {}
-    for wav_file in wav_files:
+    for wav_file in audio_files:
         name = wav_file.stem
         npy_file = vp_path / f"{name}.npy"
 
