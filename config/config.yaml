@@ -12,7 +12,7 @@ podcast:
     - "せんだ"      # 男性（低い声）
     - "かねとも"    # 女性（高い声）
   # 話者ごとの字幕カラー（ASS形式 &HBBGGRR）
-  jingle_skip_seconds: 4     # 冒頭ジングル（約4秒）の字幕をスキップ
+  jingle_skip_seconds: 3     # 冒頭ジングルの字幕をスキップする秒数
   speaker_colors:
     "せんだ": "FFFFFF"      # 白
     "かねとも": "00FFFF"    # 黄色
