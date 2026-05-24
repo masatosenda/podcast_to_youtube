@@ -6,6 +6,7 @@ transcriber.pyの戻り値セグメントリストからSRTファイルを生成
 """
 
 import logging
+import unicodedata
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -70,11 +71,12 @@ def write_srt(
         start_tc = _format_timestamp(seg["start"])
         end_tc = _format_timestamp(seg["end"])
         speaker = seg["speaker"]
-        text = seg["text"].strip()
+        text = unicodedata.normalize("NFC", seg["text"].strip())
 
         lines.append(str(idx))
         lines.append(f"{start_tc} --> {end_tc}")
         if speaker and speaker != "UNKNOWN":
+            speaker = unicodedata.normalize("NFC", speaker)
             color_tag = ""
             if speaker_colors and speaker in speaker_colors:
                 color_tag = r"{\c&H" + speaker_colors[speaker] + r"&}"

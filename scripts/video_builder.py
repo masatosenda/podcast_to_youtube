@@ -58,7 +58,7 @@ def build_video(
     if srt_path and Path(srt_path).exists():
         escaped_srt = str(srt_path).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
         subtitle_style = (
-            "FontSize=22,FontName=Hiragino Kaku Gothic ProN,"
+            "FontSize=22,FontName=Noto Sans JP,Bold=1,"
             "PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,"
             "Outline=2,Shadow=0,MarginV=40"
         )
